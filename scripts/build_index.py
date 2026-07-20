@@ -6,6 +6,7 @@ import hashlib
 from backend.indexing.bm25_index import BM25Index
 from backend.indexing import vector_store
 from backend.models import LawChunk
+from bạckend import config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -60,6 +61,8 @@ def main():
     logger.info("Building BM25 index...")
     bm25 = BM25Index()
     bm25.build(law_chunks)
+    bm25.save()   # mặc định lưu vào config.BM25_INDEX_PATH = data/bm25_index.pkl
+    logger.info(f"BM25 index saved to {config.BM25_INDEX_PATH}")
 
     # 2. Build Pinecone Index
     if args.rebuild_pinecone:
