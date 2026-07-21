@@ -1,4 +1,4 @@
-# LegalRAG — Đối chiếu pipeline.txt / guideline.txt và đề xuất điều chỉnh
+# LegalRAG — Đề xuất điều chỉnh
 
 ---
 
