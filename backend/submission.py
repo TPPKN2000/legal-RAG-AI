@@ -87,6 +87,18 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=None, help="Only process the first N cases (debugging)")
     args = parser.parse_args()
 
+    # legalrag_adjustments.md §1 (guideline.txt cross-check): the leaderboard
+    # only accepts 3 submissions/day. This script just writes a local JSON
+    # file (it does not submit anything itself), but it's easy to forget
+    # that and burn attempts re-uploading near-identical reruns — a cheap
+    # reminder here costs nothing.
+    log.warning(
+        "Reminder: the ALQAC leaderboard accepts at most 3 submissions/day. "
+        "This command only writes %s locally — double-check the output "
+        "before uploading it.",
+        args.out or config.SUBMISSION_OUT_PATH,
+    )
+
     try:
         run(test_set_path=args.test_set, out_path=args.out, limit=args.limit)
     except Exception:
