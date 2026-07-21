@@ -1,15 +1,33 @@
-import os
+"""
+Build the BM25 + Pinecone indexes for the law corpus.
+
+legalrag_adjustments.md §6a: this script used to build LawChunk objects by
+hand directly from the raw JSON (one flat "child" chunk per article, full
+article text, no real Khoản/Điểm splitting) and never called
+`backend.ingestion.chunker` at all — so `chunker.build_parent_lookup()`
+existed in the codebase but was dead code, and the reranker never had
+access to whole-article parent context.
+
+This now routes through the actual ingestion pipeline the design doc
+describes: `parser.load_law_corpus` -> `chunker.chunk_articles` (real
+Chương>Mục>Điều>Khoản>Điểm structural splitting, with the §6b soft-split for
+oversized clauses) -> `chunker.build_parent_lookup`. The parent lookup is
+persisted to `config.PARENT_LOOKUP_PATH` so `pipeline.py` can load it at
+retrieval/rerank time without re-parsing the corpus.
+"""
 import argparse
 import logging
-import json
-import hashlib
-from backend.indexing.bm25_index import BM25Index
-from backend.indexing import vector_store
-from backend.models import LawChunk
+import pickle
+
 from backend import config
+from backend.indexing import vector_store
+from backend.indexing.bm25_index import BM25Index
+from backend.ingestion.chunker import build_parent_lookup, chunk_articles
+from backend.ingestion.parser import load_law_corpus
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -18,50 +36,34 @@ def main():
     args = parser.parse_args()
 
     logger.info(f"loading law corpus from {args.corpus}")
-    with open(args.corpus, 'r', encoding='utf-8') as f:
-        corpus = json.load(f)
-
-    logger.info(f"loaded {len(corpus)} law documents")
+    law_docs = load_law_corpus(args.corpus)
+    logger.info(f"loaded {len(law_docs)} law documents")
 
     law_chunks = []
-    n_parent = 0
-    n_child = 0
+    for doc in law_docs:
+        law_chunks.extend(chunk_articles(doc.articles))
 
-    for doc in corpus:
-        law_id = doc.get('law_id', 'unknown')
-        articles = doc.get('content', [])
-        if isinstance(articles, list):
-            for art in articles:
-                text = art.get('content_Article', "")
-                aid = art.get('aid', n_child)
-                if text:
-                    # Encode chunk_id to MD5 hex to ensure ASCII compatibility for Pinecone
-                    raw_id = f"{law_id}_{aid}"
-                    safe_id = hashlib.md5(raw_id.encode()).hexdigest()
-                    
-                    chunk = LawChunk(
-                        chunk_id=safe_id, 
-                        law_id=law_id,
-                        aid=aid,
-                        text=text,
-                        level="child",
-                        breadcrumb=""
-                    )
-                    law_chunks.append(chunk)
-                    n_child += 1
-            n_parent += 1
-
+    n_parent = sum(1 for c in law_chunks if c.level == "parent")
+    n_child = sum(1 for c in law_chunks if c.level == "child")
     logger.info(f"chunked into {n_parent} parent + {n_child} child chunks")
 
     if n_child == 0:
         logger.error("No chunks created.")
         return
 
+    # 0. Persist the parent (whole-Điều) lookup so pipeline.py can re-attach
+    #    full-article context at rerank time (legalrag_adjustments.md §6a).
+    parent_lookup = build_parent_lookup(law_chunks)
+    config.PARENT_LOOKUP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(config.PARENT_LOOKUP_PATH, "wb") as f:
+        pickle.dump(parent_lookup, f)
+    logger.info(f"parent lookup ({len(parent_lookup)} articles) saved to {config.PARENT_LOOKUP_PATH}")
+
     # 1. Build BM25 Index
     logger.info("Building BM25 index...")
     bm25 = BM25Index()
     bm25.build(law_chunks)
-    bm25.save()   # mặc định lưu vào config.BM25_INDEX_PATH = data/bm25_index.pkl
+    bm25.save()  # default path: config.BM25_INDEX_PATH = data/bm25_index.pkl
     logger.info(f"BM25 index saved to {config.BM25_INDEX_PATH}")
 
     # 2. Build Pinecone Index
@@ -69,6 +71,7 @@ def main():
         logger.info("Rebuilding Pinecone index...")
         count = vector_store.upsert_chunks(law_chunks)
         logger.info(f"Successfully upserted {count} chunks to Pinecone.")
+
 
 if __name__ == "__main__":
     main()
