@@ -230,8 +230,15 @@ def generate_text(
     # model.generate makes transformers treat the whole object as inputs_tensor,
     # which then crashes because BatchEncoding has no .shape. Normalize both
     # forms before generation.
+    from transformers.tokenization_utils_base import BatchEncoding
+
     encoded = encoded.to(device) if hasattr(encoded, "to") else encoded
-    if isinstance(encoded, dict):
+
+    # apply_chat_template() may return either:
+    #   1. torch.Tensor
+    #   2. BatchEncoding
+    #   3. dict
+    if isinstance(encoded, (BatchEncoding, dict)):
         model_inputs = dict(encoded)
         input_length = model_inputs["input_ids"].shape[-1]
         generate_args = ()
