@@ -1,12 +1,17 @@
 """
-Final prompt assembly for outcome prediction (design doc §4, §7.1).
+Final prompt assembly for outcome prediction (design doc §4, §7.1;
+legalrag_adjustments.md §5).
 
 Enforces the "Grounding & Citation nghiêm ngặt" requirement:
   - The LLM must cite Điều/Khoản/Điểm for every legal claim.
   - The LLM must refuse / hedge if the retrieved context is insufficient.
   - Law-provision text is inserted VERBATIM (never compressed — see
     generation/compress.py) so no connective word can be silently dropped.
-  - Case-evidence text may be compressed (auxiliary, not statute text).
+  - Case-evidence text is NOT passed in raw here anymore. It is pre-condensed
+    by generation/case_digest.py into a short digest (legalrag_adjustments.md
+    §5 — this was the biggest single contributor to the ~10k-token final
+    prompt, and a <1B generation model degrades faster on long noisy context
+    than the previously-planned 8B model would have).
 
 Output contract: the model is asked to return a single JSON object so
 `generation/generate.py` can parse it deterministically instead of
@@ -14,8 +19,7 @@ regex-scraping free-form prose.
 """
 from __future__ import annotations
 
-from backend import config
-from backend.models import CaseEvidenceHit, RetrievedChunk
+from backend.models import RetrievedChunk
 
 SYSTEM_PROMPT = """Bạn là một hệ thống hỗ trợ dự đoán kết quả vụ án dân sự dựa trên pháp luật Việt Nam.
 
@@ -48,31 +52,25 @@ def _format_law_section(chunks: list[RetrievedChunk]) -> str:
     return "\n\n".join(lines)
 
 
-def _format_case_evidence_section(hits: list[CaseEvidenceHit], compressed_texts: list[str] | None = None) -> str:
-    if not hits:
-        return "(Không có bằng chứng vụ án nào được truy hồi.)"
-    texts = compressed_texts if compressed_texts is not None else [h.text for h in hits]
-    lines = []
-    for hit, text in zip(hits, texts):
-        lines.append(f"- [{hit.chunk_id}] {text.strip()}")
-    return "\n\n".join(lines)
-
-
 def build_prediction_prompt(
     case_query: str,
     law_chunks: list[RetrievedChunk],
-    case_evidence_hits: list[CaseEvidenceHit],
-    compressed_evidence_texts: list[str] | None = None,
+    case_digest: str,
 ) -> tuple[str, str]:
-    """Return (system_prompt, user_prompt) ready for `backend.models.generate_text`."""
+    """Return (system_prompt, user_prompt) ready for `backend.models.generate_text`.
+
+    `case_digest` is the already-condensed case-fact summary produced by
+    `generation/case_digest.build_case_digest` — this function no longer
+    accepts raw `CaseEvidenceHit`s (see module docstring, legalrag_adjustments
+    §5).
+    """
     law_section = _format_law_section(law_chunks)
-    evidence_section = _format_case_evidence_section(case_evidence_hits, compressed_evidence_texts)
 
     user_prompt = f"""TÌNH HUỐNG VỤ ÁN (case_query):
 {case_query.strip()}
 
-BẰNG CHỨNG VỤ ÁN ĐÃ TRUY HỒI (case evidence):
-{evidence_section}
+TÓM TẮT BẰNG CHỨNG VỤ ÁN (đã được tổng hợp):
+{case_digest.strip()}
 
 CÁC ĐIỀU LUẬT LIÊN QUAN ĐÃ TRUY HỒI (law evidence, nguyên văn — chỉ được trích dẫn trong danh sách này):
 {law_section}
