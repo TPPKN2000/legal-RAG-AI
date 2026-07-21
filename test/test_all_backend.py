@@ -139,6 +139,15 @@ def main():
     log.info("Model warm-up done in %.1fs", time.time() - t0)
 
     # --- load test set + gold ----------------------------------------------
+    # NOTE (legalrag_adjustments.md §1 / guideline.txt cross-check): this
+    # script reads `verdict_label` and `related_law_provisions` straight out
+    # of the test-set file for local scoring. Those two fields exist ONLY in
+    # the Public test set. The official Private test set (and the real
+    # leaderboard input) is the minimal {case_id, case_query} shape — see
+    # backend/pipeline.py._case_api_budget for the corresponding fallback
+    # (n_segments is also absent there). This harness is for local
+    # dev-set evaluation only; it is not, and must not be mistaken for, the
+    # official submission format (docs/submission_example.json is that).
     test_path = config.TEST_SET_PATH
     raw_cases = load_test_set(test_path)
     with open(test_path, "r", encoding="utf-8") as f:
