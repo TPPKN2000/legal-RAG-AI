@@ -5,6 +5,22 @@ Final generation step + grounding verification pass (design doc §7.1).
 builds the prompt, calls the LLM, parses the required JSON schema, and runs
 a verification pass that strips any citation the model invented outside the
 set of law provisions it was actually shown (hallucination guard).
+
+legalrag_adjustments.md §5: this now takes a pre-built `case_digest` string
+(see generation/case_digest.py) instead of raw case-evidence hits — the
+caller (pipeline.py) is responsible for building the digest, since the same
+case-evidence hits are also needed un-digested for the submission's
+`case_evidence` field.
+
+legalrag_adjustments.md §7 ("Neurosymbolic — rẻ, dễ implement"): after
+parsing, a small rule-based check downgrades confidence when the model's
+*self-reported* confidence isn't backed by any surviving grounded citation.
+The system prompt already asks the model to self-report low confidence when
+context is thin (rule #3), but nothing previously enforced that — a model
+can claim high confidence with zero valid citations. This does not change
+the predicted label (that would require case-specific legal judgement this
+rule-based layer doesn't have); it only caps the confidence score so
+downstream consumers of `confidence` aren't misled.
 """
 from __future__ import annotations
 
@@ -13,11 +29,16 @@ import re
 from dataclasses import dataclass, field
 
 from backend import config
-from backend.generation.compress import compress_case_evidence
 from backend.generation.prompt_builder import allowed_citation_keys, build_prediction_prompt
-from backend.models import CaseEvidenceHit, LawEvidenceItem, Prediction, RetrievedChunk, generate_text
+from backend.models import LawEvidenceItem, Prediction, RetrievedChunk, generate_text
 
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+# legalrag_adjustments.md §7: if zero citations survive the hallucination
+# guard, cap self-reported confidence at this ceiling regardless of what the
+# model claimed — an ungrounded prediction should never be reported as
+# high-confidence.
+_UNGROUNDED_CONFIDENCE_CEILING = 0.3
 
 
 @dataclass
@@ -60,14 +81,11 @@ def _safe_default(reason: str) -> OutcomePrediction:
 def predict_outcome(
     case_query: str,
     law_chunks: list[RetrievedChunk],
-    case_evidence_hits: list[CaseEvidenceHit],
-    max_new_tokens: int = 700,
+    case_digest: str,
+    max_new_tokens: int = config.GENERATION_MAX_NEW_TOKENS_DEFAULT,
     temperature: float = 0.2,
 ) -> OutcomePrediction:
-    compressed_texts = compress_case_evidence([h.text for h in case_evidence_hits])
-    system_prompt, user_prompt = build_prediction_prompt(
-        case_query, law_chunks, case_evidence_hits, compressed_texts
-    )
+    system_prompt, user_prompt = build_prediction_prompt(case_query, law_chunks, case_digest)
 
     try:
         raw = generate_text(
@@ -98,10 +116,20 @@ def predict_outcome(
         else:
             dropped += 1  # hallucinated / outside retrieved context — drop it
 
+    confidence = float(parsed.get("confidence", 0.0) or 0.0)
+    reasoning = str(parsed.get("reasoning", ""))
+    if not kept and confidence > _UNGROUNDED_CONFIDENCE_CEILING:
+        # Rule-based grounding check (legalrag_adjustments.md §7): the model
+        # claimed more confidence than a zero-citation answer should get.
+        reasoning = (
+            f"[confidence capped: no grounded law citation survived verification] {reasoning}"
+        )
+        confidence = min(confidence, _UNGROUNDED_CONFIDENCE_CEILING)
+
     return OutcomePrediction(
         prediction=prediction,
         law_citations=kept,
-        confidence=float(parsed.get("confidence", 0.0) or 0.0),
-        reasoning=str(parsed.get("reasoning", "")),
+        confidence=confidence,
+        reasoning=reasoning,
         dropped_hallucinated_citations=dropped,
     )
