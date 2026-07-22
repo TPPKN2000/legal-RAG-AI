@@ -128,7 +128,7 @@ def _get_generation_model():
     lifetime. HF `transformers` is loaded in-process per the confirmed
     choice (no vLLM/Ollama server hop).
 
-    legalrag_adjustments.md §2 — safety notes for the <1B generation model
+    system_adjustments_v3.md §2 — safety notes for the <1B generation model
     (previously Qwen3-8B, now config.GENERATION_MODEL_NAME, confirmed
     Qwen3.5-0.8B-class):
       - No `device_map`: that kwarg exists to shard a large model across
@@ -205,7 +205,7 @@ def generate_text(
     ]
     template_kwargs = dict(add_generation_prompt=True, return_tensors="pt")
     try:
-        # legalrag_adjustments.md §2 point 3: Qwen3-family chat templates
+        # system_adjustments_v3.md §2 point 3: Qwen3-family chat templates
         # default "thinking" mode on, which can burn the whole
         # max_new_tokens budget on a <think>...</think> block before any
         # JSON is emitted. Explicitly disable it (config-controlled).
