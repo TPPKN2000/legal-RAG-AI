@@ -1,4 +1,4 @@
-# LegalRAG — Đề xuất điều chỉnh
+# LegalRAG — Đề xuất điều chỉnh V3
 
 ---
 
