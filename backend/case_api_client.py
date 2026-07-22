@@ -11,7 +11,7 @@ Key constraints encoded here:
     (docs/evaluation.md §2.4), so this client also tracks call counts per
     case_id for `pipeline.py`'s budget-aware evidence loop.
 
-IMPROVEMENT_PLAN.md §3.2 (BUDGET INTEGRITY fix, applied here): the call
+system_adjustments_v4.md §3.2 (BUDGET INTEGRITY fix, applied here): the call
 counter now increments exactly once per logical `retrieve()` invocation,
 not once per HTTP attempt inside it — see `retrieve()`'s inline comment.
 """
@@ -88,7 +88,7 @@ class CaseContentAPIClient:
         headers = {"X-API-Key": self.token, "Content-Type": "application/json"}
         payload = {"query": query, "case_id": case_id}
 
-        # IMPROVEMENT_PLAN.md §3.2: count exactly ONE call for this logical
+        # system_adjustments_v4.md §3.2: count exactly ONE call for this logical
         # query, regardless of how many transient-error retries (429 / 503 /
         # network hiccup) it takes underneath. Retries are not additional
         # queries the *caller* issued, and must not inflate the
