@@ -6,13 +6,13 @@ builds the prompt, calls the LLM, parses the required JSON schema, and runs
 a verification pass that strips any citation the model invented outside the
 set of law provisions it was actually shown (hallucination guard).
 
-legalrag_adjustments.md §5: this now takes a pre-built `case_digest` string
+system_adjustments_v3.md §5: this now takes a pre-built `case_digest` string
 (see generation/case_digest.py) instead of raw case-evidence hits — the
 caller (pipeline.py) is responsible for building the digest, since the same
 case-evidence hits are also needed un-digested for the submission's
 `case_evidence` field.
 
-legalrag_adjustments.md §7 ("Neurosymbolic — rẻ, dễ implement"): after
+system_adjustments_v3.md §7 ("Neurosymbolic — rẻ, dễ implement"): after
 parsing, a small rule-based check downgrades confidence when the model's
 *self-reported* confidence isn't backed by any surviving grounded citation.
 The system prompt already asks the model to self-report low confidence when
@@ -58,7 +58,7 @@ log = logging.getLogger(__name__)
 
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
 
-# legalrag_adjustments.md §7: if zero citations survive the hallucination
+# system_adjustments_v3.md §7: if zero citations survive the hallucination
 # guard, cap self-reported confidence at this ceiling regardless of what the
 # model claimed — an ungrounded prediction should never be reported as
 # high-confidence.
@@ -198,7 +198,7 @@ def predict_outcome(
     confidence = float(parsed.get("confidence", 0.0) or 0.0)
     reasoning = str(parsed.get("reasoning", ""))
     if not kept and confidence > _UNGROUNDED_CONFIDENCE_CEILING:
-        # Rule-based grounding check (legalrag_adjustments.md §7): the model
+        # Rule-based grounding check (system_adjustments_v3.md §7): the model
         # claimed more confidence than a zero-citation answer should get.
         reasoning = (
             f"[confidence capped: no grounded law citation survived verification] {reasoning}"
