@@ -131,7 +131,5 @@ class CaseContentAPIClient:
             resp.raise_for_status()
 
         raise CaseAPIError(f"/retrieve failed after {self.max_retries} attempts: {last_exc}")
-
-
 # Process-wide singleton — see class docstring for why this must be shared.
 client = CaseContentAPIClient()
